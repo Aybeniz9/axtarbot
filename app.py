@@ -17,11 +17,15 @@ if "original_query" not in st.session_state:
     st.session_state.original_query = None
 if "last_results" not in st.session_state:
     st.session_state.last_results = None
+if "last_image_results" not in st.session_state:
+    st.session_state.last_image_results = None
+if "last_image_description" not in st.session_state:
+    st.session_state.last_image_description = None
 
 st.title("🔍 AxtarBot — Semantik Məhsul Axtarışı")
 st.caption("Açar sözə deyil, mənaya əsaslanan axtarış sistemi")
 
-# --- Sidebar: Filtrlər + Səbət ---
+# --- Sidebar: yalnız filtrlər + səbətin qısa xülasəsi ---
 with st.sidebar:
     st.header("Filtrlər")
     max_price = st.number_input("Maksimum qiymət (AZN)", min_value=0.0, value=0.0, step=5.0)
@@ -29,17 +33,8 @@ with st.sidebar:
     top_k = st.slider("Neçə nəticə göstərilsin?", min_value=1, max_value=10, value=5)
 
     st.divider()
-    st.header(f"🛒 Səbət ({st.session_state.cart.item_count})")
-    if st.session_state.cart.items:
-        for pid, item in list(st.session_state.cart.items.items()):
-            col1, col2 = st.columns([3, 1])
-            col1.write(f"{item.name} x{item.quantity} — {item.total} AZN")
-            if col2.button("❌", key=f"remove_{pid}"):
-                st.session_state.cart.remove(pid)
-                st.rerun()
-        st.metric("Ümumi", f"{st.session_state.cart.total_price} AZN")
-    else:
-        st.caption("Səbət boşdur")
+    st.metric("🛒 Səbətdəki məhsul sayı", st.session_state.cart.item_count)
+    st.caption("Tam səbəti görmək üçün 'Səbətim' bölməsinə keç →")
 
 
 def run_search(search_query, max_price, category, top_k):
@@ -58,9 +53,8 @@ def run_search(search_query, max_price, category, top_k):
         return None
 
 
-def show_results():
-    """Session state-dəki son nəticələri göstərir — hər rerun-da işləyir."""
-    data = st.session_state.last_results
+def show_results(data, key_prefix):
+    """Nəticələri kart şəklində göstərir. key_prefix hər tab üçün unikal button key yaradır."""
     if not data:
         return
 
@@ -78,15 +72,16 @@ def show_results():
             st.subheader(item["name"])
             st.write(f"**Kateqoriya:** {item['category']}")
             st.write(f"**Qiymət:** {item['price']} AZN")
-            if st.button("🛒 Səbətə at", key=f"add_{item['id']}_{i}"):
+            if st.button("🛒 Səbətə at", key=f"add_{key_prefix}_{item['id']}_{i}"):
                 st.session_state.cart.add(item["id"], item["name"], item["price"])
-                st.rerun()
+                st.success(f"{item['name']} səbətə əlavə olundu ✅")
             st.divider()
 
 
-# --- Tab-lar: Mətn axtarışı / Şəkil axtarışı ---
-tab1, tab2 = st.tabs(["🔤 Mətn ilə axtarış", "📷 Şəkil ilə axtarış"])
+# --- Tab-lar ---
+tab1, tab2, tab3 = st.tabs(["🔤 Mətn ilə axtarış", "📷 Şəkil ilə axtarış", f"🛒 Səbətim ({st.session_state.cart.item_count})"])
 
+# ============ TAB 1: Mətn axtarışı ============
 with tab1:
     query = st.text_input("Nə axtarırsınız?", placeholder="Məsələn: qışda isti qalmaq üçün geyim")
 
@@ -103,7 +98,6 @@ with tab1:
             with st.spinner("Axtarılır..."):
                 st.session_state.last_results = run_search(query, max_price, category, top_k)
 
-    # Aydınlaşdırıcı sual axını
     if st.session_state.pending_clarification:
         st.info(f"🤔 {st.session_state.pending_clarification}")
         answer = st.text_input("Cavabınız:", key="clarify_answer")
@@ -116,19 +110,51 @@ with tab1:
             st.session_state.pending_clarification = None
             st.rerun()
 
-    # Nəticələr həmişə session_state-dən göstərilir — "Səbətə at" basılanda itmir
-    show_results()
+    show_results(st.session_state.last_results, key_prefix="text")
 
+# ============ TAB 2: Şəkil ilə axtarış ============
 with tab2:
-    uploaded_image = st.file_uploader("Məhsul şəkli yüklə", type=["jpg", "jpeg", "png"])
-    if uploaded_image and st.button("Şəklə görə axtar", type="primary"):
-        image_bytes = uploaded_image.read()
-        st.image(image_bytes, width=200)
+    uploaded_image = st.file_uploader("Məhsul şəkli yüklə", type=["jpg", "jpeg", "png"], key="image_uploader")
 
-        with st.spinner("Şəkil təhlil edilir..."):
-            description = describe_image(image_bytes, mime_type=uploaded_image.type)
-        st.caption(f"🖼️ Aşkarlanan təsvir: _{description}_")
+    if uploaded_image:
+        st.image(uploaded_image, width=200)
 
-        with st.spinner("Bənzər məhsullar axtarılır..."):
-            st.session_state.last_results = run_search(description, max_price, category, top_k)
-        st.rerun()
+        if st.button("Şəklə görə axtar", type="primary"):
+            image_bytes = uploaded_image.getvalue()
+
+            with st.spinner("Şəkil təhlil edilir..."):
+                description = describe_image(image_bytes, mime_type=uploaded_image.type)
+            st.session_state.last_image_description = description
+
+            with st.spinner("Bənzər məhsullar axtarılır..."):
+                st.session_state.last_image_results = run_search(description, max_price, category, top_k)
+
+    if st.session_state.last_image_description:
+        st.caption(f"🖼️ Aşkarlanan təsvir: _{st.session_state.last_image_description}_")
+
+    show_results(st.session_state.last_image_results, key_prefix="image")
+
+# ============ TAB 3: Səbətim ============
+with tab3:
+    cart = st.session_state.cart
+
+    if not cart.items:
+        st.info("Səbətiniz hələ boşdur. Axtarış edib məhsul əlavə edə bilərsiniz.")
+    else:
+        st.subheader("Səbətinizdəki məhsullar")
+
+        for pid, item in list(cart.items.items()):
+            col1, col2, col3, col4 = st.columns([3, 1.5, 1.5, 1])
+            col1.write(f"**{item.name}**")
+            col2.write(f"{item.price} AZN × {item.quantity}")
+            col3.write(f"= {item.total} AZN")
+            if col4.button("❌ Sil", key=f"cart_remove_{pid}"):
+                cart.remove(pid)
+                st.rerun()
+
+        st.divider()
+        st.metric("Ümumi məbləğ", f"{cart.total_price} AZN")
+
+        if st.button("🗑️ Səbəti tam boşalt"):
+            st.session_state.cart = Cart()
+            st.rerun()

@@ -26,7 +26,7 @@ def search_products(req: SearchRequest):
     results = []
     for i, meta in enumerate(raw["metadatas"][0]):
         distance = raw["distances"][0][i]
-        if distance > 0.75:  # çox uzaq nəticələri atır
+        if distance > 0.75:
             continue
         if req.max_price and meta["price"] > req.max_price:
             continue
@@ -37,6 +37,7 @@ def search_products(req: SearchRequest):
             "name": meta["name"],
             "category": meta["category"],
             "price": meta["price"]
+
         })
 
     set_cache(req.query, results)
