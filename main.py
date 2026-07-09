@@ -5,6 +5,19 @@ from cache import get_cached, set_cache
 from vector_store import semantic_search
 import json
 from database import SessionLocal, SearchLog, Order, generate_order_number, get_order_status
+import os
+import os
+
+# Server ilk dəfə işə düşəndə (və ya restart-dan sonra) avtomatik indeksləmə
+if not os.path.exists("./chroma_data"):
+    from vector_store import index_all_products
+    print("ChromaData tapılmadı, məhsullar indekslənir...")
+    index_all_products()
+    print("İndeksləmə tamamlandı ✅")
+if not os.path.exists("./chroma_data"):
+    from vector_store import index_all_products
+    index_all_products()
+
 
 app = FastAPI(title="AxtarBot API")
 
