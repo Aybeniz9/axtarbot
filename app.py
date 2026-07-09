@@ -5,6 +5,29 @@ from clarify import needs_clarification, merge_query
 from image_search import describe_image
 
 st.set_page_config(page_title="AxtarBot", page_icon="🔍", layout="wide")
+st.markdown("""
+<style>
+    .stButton > button {
+        border-radius: 8px;
+        transition: all 0.2s ease;
+    }
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        background-color: #ffffff;
+        border-radius: 12px;
+        padding: 8px;
+    }
+    h3 {
+        color: #2c3e50;
+    }
+    .stProgress > div > div > div > div {
+        background-color: #ff4b4b;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 API_URL = "http://127.0.0.1:8000/search"
 
@@ -21,12 +44,62 @@ if "last_image_results" not in st.session_state:
     st.session_state.last_image_results = None
 if "last_image_description" not in st.session_state:
     st.session_state.last_image_description = None
+if "last_order" not in st.session_state:
+    st.session_state.last_order = None
+if "checkout_step" not in st.session_state:
+    st.session_state.checkout_step = False
+if "user_id" not in st.session_state:
+    st.session_state.user_id = None
+if "user_email" not in st.session_state:
+    st.session_state.user_email = None
 
 st.title("🔍 AxtarBot — Semantik Məhsul Axtarışı")
 st.caption("Açar sözə deyil, mənaya əsaslanan axtarış sistemi")
 
-# --- Sidebar: yalnız filtrlər + səbətin qısa xülasəsi ---
+# --- Sidebar: Giriş/Qeydiyyat + Filtrlər ---
 with st.sidebar:
+    if st.session_state.user_id is None:
+        st.header("🔐 Giriş / Qeydiyyat")
+        auth_mode = st.radio("Seçim:", ["Giriş", "Qeydiyyat"], horizontal=True)
+        auth_email = st.text_input("Email", key="auth_email")
+        auth_password = st.text_input("Şifrə", type="password", key="auth_password")
+
+        if auth_mode == "Qeydiyyat":
+            if st.button("Qeydiyyatdan keç"):
+                try:
+                    r = requests.post("http://127.0.0.1:8000/signup", json={"email": auth_email, "password": auth_password})
+                    data = r.json()
+                    if data.get("success"):
+                        st.session_state.user_id = data["user_id"]
+                        st.session_state.user_email = data["email"]
+                        st.rerun()
+                    else:
+                        st.error(data.get("message", "Xəta baş verdi."))
+                except requests.exceptions.ConnectionError:
+                    st.error("⚠️ API-yə qoşulmaq mümkün olmadı.")
+        else:
+            if st.button("Giriş et"):
+                try:
+                    r = requests.post("http://127.0.0.1:8000/login", json={"email": auth_email, "password": auth_password})
+                    data = r.json()
+                    if data.get("success"):
+                        st.session_state.user_id = data["user_id"]
+                        st.session_state.user_email = data["email"]
+                        st.rerun()
+                    else:
+                        st.error(data.get("message", "Xəta baş verdi."))
+                except requests.exceptions.ConnectionError:
+                    st.error("⚠️ API-yə qoşulmaq mümkün olmadı.")
+
+        st.divider()
+    else:
+        st.success(f"👤 {st.session_state.user_email}")
+        if st.button("Çıxış et"):
+            st.session_state.user_id = None
+            st.session_state.user_email = None
+            st.rerun()
+        st.divider()
+
     st.header("Filtrlər")
     max_price = st.number_input("Maksimum qiymət (AZN)", min_value=0.0, value=0.0, step=5.0)
     category = st.text_input("Kateqoriya (boş buraxsan hamısı)", value="")
@@ -66,24 +139,65 @@ def show_results(data, key_prefix):
         st.info("Heç bir nəticə tapılmadı. Filtrləri yumşaltmağı sınayın.")
         return
 
+    sort_option = st.radio(
+        "Sırala:",
+        ["🎯 Ən uyğun", "💰 Ucuzdan bahaya", "💎 Bahadan ucuza"],
+        horizontal=True,
+        key=f"sort_{key_prefix}"
+    )
+
+    if sort_option == "💰 Ucuzdan bahaya":
+        results = sorted(results, key=lambda x: x["price"])
+    elif sort_option == "💎 Bahadan ucuza":
+        results = sorted(results, key=lambda x: x["price"], reverse=True)
+
     cols = st.columns(3)
     for i, item in enumerate(results):
         with cols[i % 3]:
-            st.subheader(item["name"])
-            st.write(f"**Kateqoriya:** {item['category']}")
-            st.write(f"**Qiymət:** {item['price']} AZN")
-            if st.button("🛒 Səbətə at", key=f"add_{key_prefix}_{item['id']}_{i}"):
-                st.session_state.cart.add(item["id"], item["name"], item["price"])
-                st.success(f"{item['name']} səbətə əlavə olundu ✅")
-            st.divider()
+            with st.container(border=True):
+                category_emoji = {
+                    "geyim": "👕", "ayaqqabı": "👟", "aksesuar": "🧣",
+                    "elektronika": "🔌", "ev əşyaları": "🏠", "idman": "⚽"
+                }.get(item["category"], "📦")
+
+                st.subheader(f"{category_emoji} {item['name']}")
+                st.write(f"**Kateqoriya:** {item['category']}")
+                st.write(f"**Qiymət:** {item['price']} AZN")
+
+                similarity = item.get("similarity")
+                if similarity is not None:
+                    st.progress(min(max(similarity, 0), 100) / 100, text=f"🎯 {similarity}% uyğunluq")
+
+                if st.button("🛒 Səbətə at", key=f"add_{key_prefix}_{item['id']}_{i}"):
+                    st.session_state.cart.add(item["id"], item["name"], item["price"])
+                    st.success(f"{item['name']} səbətə əlavə olundu ✅")
 
 
 # --- Tab-lar ---
-tab1, tab2, tab3 = st.tabs(["🔤 Mətn ilə axtarış", "📷 Şəkil ilə axtarış", f"🛒 Səbətim ({st.session_state.cart.item_count})"])
+tab1, tab2, tab3, tab4 = st.tabs([
+    "🔤 Mətn ilə axtarış",
+    "📷 Şəkil ilə axtarış",
+    f"🛒 Səbətim ({st.session_state.cart.item_count})",
+    "📦 Sifarişlərim"
+])
 
 # ============ TAB 1: Mətn axtarışı ============
 with tab1:
-    query = st.text_input("Nə axtarırsınız?", placeholder="Məsələn: qışda isti qalmaq üçün geyim")
+    st.write("🎤 İstəsən, sualını səslə də deyə bilərsən:")
+    audio_value = st.audio_input("Səs qeydi et", key="voice_input")
+
+    voice_query = None
+    if audio_value is not None:
+        with st.spinner("Səs mətnə çevrilir..."):
+            from gemini_transcribe import transcribe_audio
+            voice_query = transcribe_audio(audio_value.getvalue(), mime_type="audio/wav")
+        st.caption(f"🗣️ Eşidilən: _{voice_query}_")
+
+    query = st.text_input(
+        "Nə axtarırsınız?",
+        value=voice_query or "",
+        placeholder="Məsələn: qışda isti qalmaq üçün geyim"
+    )
 
     if st.button("Axtar", type="primary") and query:
         with st.spinner("Sorğu təhlil edilir..."):
@@ -138,11 +252,21 @@ with tab2:
 with tab3:
     cart = st.session_state.cart
 
-    if not cart.items:
-        st.info("Səbətiniz hələ boşdur. Axtarış edib məhsul əlavə edə bilərsiniz.")
-    else:
-        st.subheader("Səbətinizdəki məhsullar")
+    if st.session_state.get("last_order"):
+        order = st.session_state.last_order
+        st.success(f"✅ Sifarişiniz qəbul edildi! Sifariş nömrəsi: **{order['order_number']}**")
+        st.write(f"Ümumi məbləğ: **{order['total_price']} AZN**")
+        st.caption("Sifarişinizin statusunu 'Sifarişlərim' bölməsindən izləyə bilərsiniz.")
+        if st.button("Yeni sifarişə başla"):
+            st.session_state.last_order = None
+            st.session_state.checkout_step = False
+            st.rerun()
 
+    elif not cart.items:
+        st.info("Səbətiniz hələ boşdur. Axtarış edib məhsul əlavə edə bilərsiniz.")
+
+    elif not st.session_state.checkout_step:
+        st.subheader("Səbətinizdəki məhsullar")
         for pid, item in list(cart.items.items()):
             col1, col2, col3, col4 = st.columns([3, 1.5, 1.5, 1])
             col1.write(f"**{item.name}**")
@@ -155,6 +279,105 @@ with tab3:
         st.divider()
         st.metric("Ümumi məbləğ", f"{cart.total_price} AZN")
 
-        if st.button("🗑️ Səbəti tam boşalt"):
-            st.session_state.cart = Cart()
-            st.rerun()
+        col_a, col_b = st.columns(2)
+        with col_a:
+            if st.button("🗑️ Səbəti tam boşalt"):
+                st.session_state.cart = Cart()
+                st.rerun()
+        with col_b:
+            if st.button("✅ Sifarişi tamamla", type="primary"):
+                st.session_state.checkout_step = True
+                st.rerun()
+
+    else:
+        st.subheader("📍 Çatdırılma məlumatları")
+        customer_name = st.text_input("Ad Soyad")
+        address = st.text_area("Ünvan", placeholder="Şəhər, küçə, ev/mənzil nömrəsi")
+        phone = st.text_input("Telefon nömrəsi", placeholder="+994 XX XXX XX XX")
+
+        st.divider()
+        st.subheader("💳 Ödəniş məlumatları")
+        st.caption("⚠️ Bu, tədris məqsədli simulyasiyadır — real ödəniş aparılmır.")
+        card_number = st.text_input("Kart nömrəsi", placeholder="XXXX XXXX XXXX XXXX", max_chars=19)
+        col_exp, col_cvv = st.columns(2)
+        with col_exp:
+            expiry = st.text_input("Son istifadə tarixi", placeholder="AA/İİ")
+        with col_cvv:
+            cvv = st.text_input("CVV", placeholder="XXX", type="password", max_chars=3)
+
+        st.divider()
+        st.metric("Ödəniləcək məbləğ", f"{cart.total_price} AZN")
+
+        col_back, col_confirm = st.columns(2)
+        with col_back:
+            if st.button("← Geri"):
+                st.session_state.checkout_step = False
+                st.rerun()
+        with col_confirm:
+            can_submit = customer_name and address and phone and len(card_number.replace(" ", "")) >= 4
+            if st.button("💳 Ödə və Sifarişi Təsdiqlə", type="primary", disabled=not can_submit):
+                order_payload = {
+                    "items": [
+                        {
+                            "product_id": item.product_id,
+                            "name": item.name,
+                            "price": item.price,
+                            "quantity": item.quantity
+                        }
+                        for item in cart.items.values()
+                    ],
+                    "total_price": cart.total_price,
+                    "customer_name": customer_name,
+                    "address": address,
+                    "phone": phone,
+                    "card_number": card_number,
+                    "user_id": st.session_state.user_id
+                }
+                try:
+                    response = requests.post("http://127.0.0.1:8000/order", json=order_payload)
+                    response.raise_for_status()
+                    order_data = response.json()
+                    st.session_state.last_order = order_data
+                    st.session_state.cart = Cart()
+                    st.session_state.checkout_step = False
+                    st.rerun()
+                except requests.exceptions.ConnectionError:
+                    st.error("⚠️ API-yə qoşulmaq mümkün olmadı.")
+            if not can_submit:
+                st.caption("Zəhmət olmasa, bütün sahələri doldurun.")
+
+# ============ TAB 4: Sifarişlərim ============
+with tab4:
+    st.subheader("📦 Sifarişləriniz")
+
+    try:
+        params = {"user_id": st.session_state.user_id} if st.session_state.user_id else {}
+        response = requests.get("http://127.0.0.1:8000/orders", params=params)
+        response.raise_for_status()
+        orders = response.json().get("orders", [])
+    except requests.exceptions.ConnectionError:
+        st.error("⚠️ API-yə qoşulmaq mümkün olmadı.")
+        orders = []
+
+    if not orders:
+        st.info("Hələ heç bir sifarişiniz yoxdur.")
+    else:
+        for order in orders:
+            with st.container(border=True):
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.write(f"**Sifariş №:** {order['order_number']}")
+                    st.write(f"**Ünvan:** {order.get('address', '-')}")
+                    st.write(f"**Kart:** •••• {order.get('card_last4', '----')}")
+                with col2:
+                    st.metric("Məbləğ", f"{order['total_price']} AZN")
+
+                st.write(f"**Status:** {order['status']}")
+
+                statuses = ["📝 Qəbul edildi", "📦 Hazırlanır", "🚚 Yola çıxıb", "✅ Çatdırıldı"]
+                current_index = statuses.index(order['status']) if order['status'] in statuses else 0
+                st.progress((current_index + 1) / len(statuses))
+
+                with st.expander("Məhsullar"):
+                    for item in order["items"]:
+                        st.write(f"- {item['name']} × {item['quantity']} = {item['price'] * item['quantity']} AZN")
