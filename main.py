@@ -6,7 +6,6 @@ from vector_store import semantic_search
 import json
 from database import SessionLocal, SearchLog, Order, generate_order_number, get_order_status
 import os
-import os
 
 # Server ilk dəfə işə düşəndə (və ya restart-dan sonra) avtomatik indeksləmə
 if not os.path.exists("./chroma_data"):

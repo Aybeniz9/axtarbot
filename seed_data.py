@@ -60,4 +60,10 @@ sample_products = [
     {"name": "Fitness Su Butulkası",
      "description": "İdman zalında və açıq havada istifadə üçün yüngül, sızdırmayan su qabı", "price": 10.0,
      "category": "idman", "stock": 55},
+
+# İçki/Qida
+    {"name": "İsti Şokolad Qarışığı", "description": "Soyuq qış axşamlarında isinmək üçün krem-şokolad dadlı isti içki tozu", "price": 8.0, "category": "içki", "stock": 40},
+    {"name": "Bitki Çayı Dəsti", "description": "Rahatlaşdırıcı, isti içilən nanə-məlisə qarışıqlı bitki çayı toplusu", "price": 12.0, "category": "içki", "stock": 35},
+    {"name": "Enerji İçkisi", "description": "İdman və fəal gün üçün canlandırıcı, soyuq içilən enerji içkisi", "price": 5.0, "category": "içki", "stock": 60},
+    {"name": "Termos Qəhvə Fincanı", "description": "Səyahətdə qəhvəni uzun müddət isti saxlayan izolyasiyalı fincan", "price": 15.0, "category": "içki", "stock": 25},
 ]
