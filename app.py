@@ -3,29 +3,161 @@ import requests
 from models import Cart
 from clarify import needs_clarification, merge_query
 from image_search import describe_image
+from models import Cart, Wishlist
 
 st.set_page_config(page_title="AxtarBot", page_icon="🔍", layout="wide")
 st.markdown("""
+<link href="https://fonts.googleapis.com/css2?family=Lora:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+    }
+
+    .stApp {
+        background-color: #F7F3ED;
+    }
+
+    h1 {
+        font-family: 'Lora', serif;
+        color: #1B2A4A;
+        font-weight: 700;
+    }
+
+    h2, h3 {
+        font-family: 'Lora', serif;
+        color: #1B2A4A;
+    }
+
+    /* Kartlar */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        background-color: #ffffff;
+        border-radius: 14px;
+        padding: 10px;
+        border: 1px solid #E8E2D6;
+        box-shadow: 0 2px 8px rgba(27, 42, 74, 0.06);
+    }
+
+    /* Düymələr */
     .stButton > button {
         border-radius: 8px;
+        border: none;
+        background-color: #E8985E;
+        color: #ffffff;
+        font-weight: 600;
         transition: all 0.2s ease;
     }
     .stButton > button:hover {
+        background-color: #d6813f;
         transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        box-shadow: 0 4px 12px rgba(232, 152, 94, 0.35);
     }
-    div[data-testid="stVerticalBlockBorderWrapper"] {
-        background-color: #ffffff;
-        border-radius: 12px;
-        padding: 8px;
+
+    /* Əsas "Axtar" / "primary" düymələr üçün fərqli görünüş */
+    .stButton > button[kind="primary"] {
+        background-color: #1B2A4A;
     }
-    h3 {
-        color: #2c3e50;
+    .stButton > button[kind="primary"]:hover {
+        background-color: #2a3f66;
     }
+
+    /* Uyğunluq faizi zolağı - kəhrəba -> yaşıl gradient */
     .stProgress > div > div > div > div {
-        background-color: #ff4b4b;
+        background: linear-gradient(90deg, #E8985E 0%, #2ECC91 100%);
     }
+
+    /* Sidebar */
+    section[data-testid="stSidebar"] {
+        background-color: #1B2A4A;
+    }
+    section[data-testid="stSidebar"] * {
+        color: #F7F3ED !important;
+    }
+    section[data-testid="stSidebar"] input, section[data-testid="stSidebar"] textarea {
+        color: #1B2A4A !important;
+    }
+
+    /* Tab-lar */
+    .stTabs [data-baseweb="tab"] {
+        font-weight: 600;
+        color: #3D5A73;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #E8985E !important;
+        border-bottom-color: #E8985E !important;
+    }
+
+    /* Caption/kiçik mətnlər */
+    .stCaption, [data-testid="stCaptionContainer"] {
+        color: #3D5A73;
+    }
+    /* Başlıqdakı ikon nəbz kimi döyünsün */
+    h1 {
+        animation: none;
+    }
+    h1::before {
+        content: "";
+    }
+
+    /* Kartlar səhifəyə "sürüşərək" gəlsin */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        animation: fadeInUp 0.5s ease-out;
+    }
+
+    @keyframes fadeInUp {
+        from {
+            opacity: 0;
+            transform: translateY(15px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    /* Uyğunluq zolağı dolarkən animasiyalı görünsün */
+    .stProgress > div > div > div > div {
+        background: linear-gradient(90deg, #E8985E 0%, #2ECC91 100%);
+        background-size: 200% 100%;
+        animation: shimmer 2s ease-in-out infinite;
+    }
+
+    @keyframes shimmer {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+
+    /* Düymə basılanda "sıçrayış" */
+    .stButton > button:active {
+        transform: scale(0.96);
+    }
+
+    /* Axtarış ikonu (🔍) yüngül nəbz kimi böyüyüb-kiçilsin */
+    .stApp > header + div h1 {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+    }
+</style>
+
+<script>
+    // Başlıqdakı 🔍 emojisini tapıb nəbz animasiyası veririk
+    setTimeout(function() {
+        const h1 = window.parent.document.querySelector('h1');
+        if (h1 && !h1.dataset.animated) {
+            h1.dataset.animated = "true";
+            h1.style.transition = "none";
+            const style = document.createElement('style');
+            style.innerHTML = `
+                @keyframes iconPulse {
+                    0%, 100% { transform: scale(1); }
+                    50% { transform: scale(1.15); }
+                }
+            `;
+            window.parent.document.head.appendChild(style);
+        }
+    }, 300);
+</script>
 </style>
 """, unsafe_allow_html=True)
 
@@ -52,8 +184,21 @@ if "user_id" not in st.session_state:
     st.session_state.user_id = None
 if "user_email" not in st.session_state:
     st.session_state.user_email = None
+if "wishlist" not in st.session_state:
+    st.session_state.wishlist = Wishlist()
 
-st.title("🔍 AxtarBot — Semantik Məhsul Axtarışı")
+st.markdown("""
+<h1 style="display:flex; align-items:center; gap:14px; font-family:'Lora',serif; color:#1B2A4A;">
+    <span style="display:inline-block; animation: iconPulse 2s ease-in-out infinite;">🔍</span>
+    AxtarBot — Semantik Məhsul Axtarışı
+</h1>
+<style>
+@keyframes iconPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.15) rotate(-8deg); }
+}
+</style>
+""", unsafe_allow_html=True)
 st.caption("Açar sözə deyil, mənaya əsaslanan axtarış sistemi")
 
 # --- Sidebar: Giriş/Qeydiyyat + Filtrlər ---
@@ -72,6 +217,7 @@ with st.sidebar:
                     if data.get("success"):
                         st.session_state.user_id = data["user_id"]
                         st.session_state.user_email = data["email"]
+                        st.toast(f"Xoş gəldin, {data['email']}!", icon="👋")
                         st.rerun()
                     else:
                         st.error(data.get("message", "Xəta baş verdi."))
@@ -125,7 +271,12 @@ def run_search(search_query, max_price, category, top_k):
         st.error("⚠️ API-yə qoşulmaq mümkün olmadı. `uvicorn main:app --reload` işə düşübmü?")
         return None
 
-
+def show_skeleton(count=3):
+    """Yüklənmə zamanı boş kart konturları göstərir."""
+    cols = st.columns(3)
+    for i in range(count):
+        with cols[i % 3]:
+            st.markdown('<div style="background:#ffffff; border-radius:14px; border:1px solid #E8E2D6; padding:16px; margin-bottom:12px; animation: skeletonPulse 1.4s ease-in-out infinite;"><div style="height:22px; width:70%; background:#E8E2D6; border-radius:4px; margin-bottom:12px;"></div><div style="height:14px; width:50%; background:#E8E2D6; border-radius:4px; margin-bottom:8px;"></div><div style="height:14px; width:40%; background:#E8E2D6; border-radius:4px; margin-bottom:12px;"></div><div style="height:8px; width:100%; background:#E8E2D6; border-radius:4px;"></div></div><style>@keyframes skeletonPulse {0%, 100% { opacity: 1; } 50% { opacity: 0.5; }}</style>', unsafe_allow_html=True)
 def show_results(data, key_prefix):
     """Nəticələri kart şəklində göstərir. key_prefix hər tab üçün unikal button key yaradır."""
     if not data:
@@ -136,7 +287,9 @@ def show_results(data, key_prefix):
     st.caption(f"Mənbə: {'💾 keş' if source == 'cache' else '🔴 canlı'}")
 
     if not results:
-        st.info("Heç bir nəticə tapılmadı. Filtrləri yumşaltmağı sınayın.")
+        st.markdown(
+            '<div style="text-align:center; padding: 50px 20px; background:#ffffff; border-radius:14px; border:1px solid #E8E2D6;"><div style="font-size:48px; margin-bottom:10px;">🔎</div><div style="font-family:\'Lora\',serif; font-size:18px; color:#1B2A4A; margin-bottom:6px;">Uyğun məhsul tapılmadı</div><div style="color:#3D5A73; font-size:14px;">Filtrləri (qiymət, kateqoriya) yumşaltmağı və ya sorğunu fərqli sözlərlə yenidən yazmağı sına.</div></div>',
+            unsafe_allow_html=True)
         return
 
     sort_option = st.radio(
@@ -168,17 +321,31 @@ def show_results(data, key_prefix):
                 if similarity is not None:
                     st.progress(min(max(similarity, 0), 100) / 100, text=f"🎯 {similarity}% uyğunluq")
 
-                if st.button("🛒 Səbətə at", key=f"add_{key_prefix}_{item['id']}_{i}"):
-                    st.session_state.cart.add(item["id"], item["name"], item["price"])
-                    st.success(f"{item['name']} səbətə əlavə olundu ✅")
+                col_cart, col_heart = st.columns([3, 1])
+                with col_cart:
+                    if st.button("🛒 Səbətə at", key=f"add_{key_prefix}_{item['id']}_{i}", use_container_width=True):
+                        st.session_state.cart.add(item["id"], item["name"], item["price"])
+                        st.toast(f"{item['name']} səbətə əlavə olundu!", icon="🛒")
+                with col_heart:
+                    is_liked = st.session_state.wishlist.contains(item["id"])
+                    heart_icon = "❤️" if is_liked else "🤍"
+                    if st.button(heart_icon, key=f"wish_{key_prefix}_{item['id']}_{i}"):
+                        added = st.session_state.wishlist.toggle(item["id"], item["name"], item["price"],
+                                                                 item["category"])
+                        if added:
+                            st.toast(f"{item['name']} istək siyahısına əlavə olundu!", icon="❤️")
+                        else:
+                            st.toast(f"{item['name']} istək siyahısından silindi", icon="💔")
+                        st.rerun()
 
 
 # --- Tab-lar ---
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🔤 Mətn ilə axtarış",
     "📷 Şəkil ilə axtarış",
     f"🛒 Səbətim ({st.session_state.cart.item_count})",
-    "📦 Sifarişlərim"
+    "📦 Sifarişlərim",
+    f"❤️ İstəklərim ({st.session_state.wishlist.count})"
 ])
 
 # ============ TAB 1: Mətn axtarışı ============
@@ -209,8 +376,11 @@ with tab1:
             st.session_state.last_results = None
         else:
             st.session_state.pending_clarification = None
-            with st.spinner("Axtarılır..."):
-                st.session_state.last_results = run_search(query, max_price, category, top_k)
+            skeleton_placeholder = st.empty()
+            with skeleton_placeholder.container():
+                show_skeleton()
+            st.session_state.last_results = run_search(query, max_price, category, top_k)
+            skeleton_placeholder.empty()
 
     if st.session_state.pending_clarification:
         st.info(f"🤔 {st.session_state.pending_clarification}")
@@ -219,8 +389,11 @@ with tab1:
             with st.spinner("Sorğu zənginləşdirilir..."):
                 enriched_query = merge_query(st.session_state.original_query, answer)
             st.caption(f"🔎 Yeni sorğu: _{enriched_query}_")
-            with st.spinner("Axtarılır..."):
-                st.session_state.last_results = run_search(enriched_query, max_price, category, top_k)
+            skeleton_placeholder = st.empty()
+            with skeleton_placeholder.container():
+                show_skeleton()
+            st.session_state.last_results = run_search(enriched_query, max_price, category, top_k)
+            skeleton_placeholder.empty()
             st.session_state.pending_clarification = None
             st.rerun()
 
@@ -240,8 +413,11 @@ with tab2:
                 description = describe_image(image_bytes, mime_type=uploaded_image.type)
             st.session_state.last_image_description = description
 
-            with st.spinner("Bənzər məhsullar axtarılır..."):
-                st.session_state.last_image_results = run_search(description, max_price, category, top_k)
+            skeleton_placeholder = st.empty()
+            with skeleton_placeholder.container():
+                show_skeleton()
+            st.session_state.last_image_results = run_search(description, max_price, category, top_k)
+            skeleton_placeholder.empty()
 
     if st.session_state.last_image_description:
         st.caption(f"🖼️ Aşkarlanan təsvir: _{st.session_state.last_image_description}_")
@@ -262,9 +438,11 @@ with tab3:
             st.session_state.checkout_step = False
             st.rerun()
 
-    elif not cart.items:
-        st.info("Səbətiniz hələ boşdur. Axtarış edib məhsul əlavə edə bilərsiniz.")
 
+    elif not cart.items:
+        st.markdown(
+            '<div style="text-align:center; padding: 60px 20px; background:#ffffff; border-radius:14px; border:1px solid #E8E2D6;"><div style="font-size:56px; margin-bottom:12px;">🛍️</div><div style="font-family:\'Lora\',serif; font-size:20px; color:#1B2A4A; margin-bottom:6px;">Səbətin hələ boşdur</div><div style="color:#3D5A73; font-size:14px;">Yuxarıdakı sekmələrdən axtarış edib bəyəndiyin məhsulları buraya əlavə et.</div></div>',
+            unsafe_allow_html=True)
     elif not st.session_state.checkout_step:
         st.subheader("Səbətinizdəki məhsullar")
         for pid, item in list(cart.items.items()):
@@ -273,7 +451,9 @@ with tab3:
             col2.write(f"{item.price} AZN × {item.quantity}")
             col3.write(f"= {item.total} AZN")
             if col4.button("❌ Sil", key=f"cart_remove_{pid}"):
+                item_name = item.name
                 cart.remove(pid)
+                st.toast(f"{item_name} səbətdən silindi", icon="🗑️")
                 st.rerun()
 
         st.divider()
@@ -340,6 +520,7 @@ with tab3:
                     st.session_state.last_order = order_data
                     st.session_state.cart = Cart()
                     st.session_state.checkout_step = False
+                    st.toast("Sifarişiniz uğurla qəbul edildi!", icon="✅")
                     st.rerun()
                 except requests.exceptions.ConnectionError:
                     st.error("⚠️ API-yə qoşulmaq mümkün olmadı.")
@@ -360,7 +541,9 @@ with tab4:
         orders = []
 
     if not orders:
-        st.info("Hələ heç bir sifarişiniz yoxdur.")
+        st.markdown(
+            '<div style="text-align:center; padding: 60px 20px; background:#ffffff; border-radius:14px; border:1px solid #E8E2D6;"><div style="font-size:56px; margin-bottom:12px;">📦</div><div style="font-family:\'Lora\',serif; font-size:20px; color:#1B2A4A; margin-bottom:6px;">Hələ sifarişin yoxdur</div><div style="color:#3D5A73; font-size:14px;">Səbətə məhsul əlavə edib sifariş verəndə, burada görəcəksən.</div></div>',
+            unsafe_allow_html=True)
     else:
         for order in orders:
             with st.container(border=True):
@@ -381,3 +564,35 @@ with tab4:
                 with st.expander("Məhsullar"):
                     for item in order["items"]:
                         st.write(f"- {item['name']} × {item['quantity']} = {item['price'] * item['quantity']} AZN")
+
+# ============ TAB 5: İstəklərim ============
+with tab5:
+    wishlist = st.session_state.wishlist
+
+    if not wishlist.items:
+        st.markdown('<div style="text-align:center; padding: 60px 20px; background:#ffffff; border-radius:14px; border:1px solid #E8E2D6;"><div style="font-size:56px; margin-bottom:12px;">❤️</div><div style="font-family:\'Lora\',serif; font-size:20px; color:#1B2A4A; margin-bottom:6px;">İstək siyahın hələ boşdur</div><div style="color:#3D5A73; font-size:14px;">Bəyəndiyin məhsulların yanındakı 🤍 düyməsinə bas ki, buraya əlavə olunsun.</div></div>', unsafe_allow_html=True)
+    else:
+        st.subheader("Bəyəndiyin məhsullar")
+        cols = st.columns(3)
+        for i, (pid, item) in enumerate(list(wishlist.items.items())):
+            with cols[i % 3]:
+                with st.container(border=True):
+                    category_emoji = {
+                        "geyim": "👕", "ayaqqabı": "👟", "aksesuar": "🧣",
+                        "elektronika": "🔌", "ev əşyaları": "🏠", "idman": "⚽"
+                    }.get(item["category"], "📦")
+
+                    st.subheader(f"{category_emoji} {item['name']}")
+                    st.write(f"**Qiymət:** {item['price']} AZN")
+
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        if st.button("🛒 Səbətə köçür", key=f"wish_to_cart_{pid}"):
+                            st.session_state.cart.add(pid, item["name"], item["price"])
+                            wishlist.remove(pid)
+                            st.toast(f"{item['name']} səbətə köçürüldü!", icon="🛒")
+                            st.rerun()
+                    with col_b:
+                        if st.button("🗑️ Sil", key=f"wish_remove_{pid}"):
+                            wishlist.remove(pid)
+                            st.rerun()

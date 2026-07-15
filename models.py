@@ -60,3 +60,27 @@ class Cart:
     @property
     def item_count(self):
         return sum(item.quantity for item in self.items.values())
+
+class Wishlist:
+        def __init__(self):
+            self.items: dict[str, dict] = {}  # product_id -> {name, price, category}
+
+        def toggle(self, product_id, name, price, category):
+            """Əgər var — silir, yoxdursa — əlavə edir."""
+            if product_id in self.items:
+                del self.items[product_id]
+                return False  # artıq wishlist-də deyil
+            else:
+                self.items[product_id] = {"name": name, "price": price, "category": category}
+                return True  # wishlist-ə əlavə olundu
+
+        def contains(self, product_id):
+            return product_id in self.items
+
+        def remove(self, product_id):
+            if product_id in self.items:
+                del self.items[product_id]
+
+        @property
+        def count(self):
+            return len(self.items)
